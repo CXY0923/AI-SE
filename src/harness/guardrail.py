@@ -138,3 +138,22 @@ class HITLGate:
         os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
         with open(self.state_path, "w") as f:
             json.dump({"pending": self._pending}, f)
+
+
+class Guardrail:
+    """治理护栏编排器，依次调用三层检查。"""
+
+    def __init__(self, rule_engine: RuleEngine, sandbox: Sandbox, hitl: HITLGate):
+        self.rule_engine = rule_engine
+        self.sandbox = sandbox
+        self.hitl = hitl
+
+    def check(self, action: Action) -> GuardrailResult:
+        """依次检查：规则引擎 → 沙箱 → HITL。返回最终裁决。"""
+        result = self.rule_engine.check(action)
+        if result.verdict in (Verdict.DENY, Verdict.PENDING):
+            return result
+        result = self.sandbox.check(action)
+        if result.verdict == Verdict.DENY:
+            return result
+        return result

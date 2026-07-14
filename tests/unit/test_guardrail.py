@@ -197,3 +197,63 @@ def test_hitl_gate_list_pending(hitl_gate):
     gate.add_pending(a2)
     pending = gate.list_pending()
     assert len(pending) == 2
+
+
+def test_guardrail_integration_deny():
+    from harness.guardrail import Guardrail, RuleEngine, Sandbox, HITLGate
+    guard = Guardrail(
+        rule_engine=RuleEngine(deny_commands=[{"pattern": "rm -rf /", "reason": "deny"}]),
+        sandbox=Sandbox(work_dir="/workspace", allow_commands=("git", "python")),
+        hitl=HITLGate(timeout=300),
+    )
+    action = Action(type="shell", params={"command": "rm -rf /"})
+    result = guard.check(action)
+    assert result.verdict == Verdict.DENY
+
+
+def test_guardrail_integration_sandbox_deny():
+    from harness.guardrail import Guardrail, RuleEngine, Sandbox, HITLGate
+    guard = Guardrail(
+        rule_engine=RuleEngine(),
+        sandbox=Sandbox(work_dir="/workspace", allow_commands=("git", "python")),
+        hitl=HITLGate(timeout=300),
+    )
+    action = Action(type="shell", params={"command": "rm -rf /tmp"})
+    result = guard.check(action)
+    assert result.verdict == Verdict.DENY
+
+
+def test_guardrail_integration_hitl_pending():
+    from harness.guardrail import Guardrail, RuleEngine, Sandbox, HITLGate
+    guard = Guardrail(
+        rule_engine=RuleEngine(require_approval=[{"pattern": "git push", "reason": "需要审批"}]),
+        sandbox=Sandbox(work_dir="/workspace", allow_commands=("git", "python")),
+        hitl=HITLGate(timeout=300),
+    )
+    action = Action(type="shell", params={"command": "git push origin main"})
+    result = guard.check(action)
+    assert result.verdict == Verdict.PENDING
+
+
+def test_guardrail_integration_allow():
+    from harness.guardrail import Guardrail, RuleEngine, Sandbox, HITLGate
+    guard = Guardrail(
+        rule_engine=RuleEngine(),
+        sandbox=Sandbox(work_dir="/workspace", allow_commands=("git", "python")),
+        hitl=HITLGate(timeout=300),
+    )
+    action = Action(type="shell", params={"command": "git status"})
+    result = guard.check(action)
+    assert result.verdict == Verdict.ALLOW
+
+
+def test_guardrail_integration_path_escape():
+    from harness.guardrail import Guardrail, RuleEngine, Sandbox, HITLGate
+    guard = Guardrail(
+        rule_engine=RuleEngine(),
+        sandbox=Sandbox(work_dir="/workspace"),
+        hitl=HITLGate(timeout=300),
+    )
+    action = Action(type="read", params={"path": "/etc/passwd"})
+    result = guard.check(action)
+    assert result.verdict == Verdict.DENY
