@@ -1,5 +1,7 @@
 import fnmatch
+import json
 import os
+import threading
 from typing import Optional
 from harness.action import Action, GuardrailResult, Verdict
 
@@ -70,3 +72,69 @@ class Sandbox:
                 layer="sandbox",
             )
         return GuardrailResult(verdict=Verdict.ALLOW, layer="sandbox")
+
+
+class HITLGate:
+    """HITL 审批状态机，管理需要人工审批的动作。"""
+
+    def __init__(self, timeout: int = 300, state_path: Optional[str] = None):
+        self.timeout = timeout
+        self.state_path = state_path or os.path.expanduser("~/.harness/hitl_state.json")
+        self._pending: list[dict] = []
+        self._lock = threading.Lock()
+        self._load()
+
+    def add_pending(self, action: Action) -> None:
+        with self._lock:
+            entry = {
+                "id": len(self._pending) + 1,
+                "action_type": action.type,
+                "params": action.params,
+                "thought": action.thought,
+                "status": "pending",
+            }
+            self._pending.append(entry)
+            self._save()
+
+    def has_pending(self) -> bool:
+        with self._lock:
+            return any(p["status"] == "pending" for p in self._pending)
+
+    def list_pending(self) -> list[dict]:
+        with self._lock:
+            return [p for p in self._pending if p["status"] == "pending"]
+
+    def approve(self, action: Action) -> GuardrailResult:
+        with self._lock:
+            self._remove_pending(action)
+            self._save()
+        return GuardrailResult(verdict=Verdict.APPROVED, reason="人工批准", layer="hitl")
+
+    def reject(self, action: Action) -> GuardrailResult:
+        with self._lock:
+            self._remove_pending(action)
+            self._save()
+        return GuardrailResult(verdict=Verdict.REJECTED, reason="人工拒绝", layer="hitl")
+
+    def await_approval(self, action: Action) -> GuardrailResult:
+        if self.timeout <= 0:
+            return GuardrailResult(verdict=Verdict.TIMEOUT, reason="审批超时", layer="hitl")
+        self.add_pending(action)
+        return GuardrailResult(verdict=Verdict.PENDING, reason="等待人工审批", layer="hitl")
+
+    def _remove_pending(self, action: Action) -> None:
+        self._pending = [
+            p for p in self._pending
+            if not (p["action_type"] == action.type and p["params"] == action.params)
+        ]
+
+    def _load(self) -> None:
+        if os.path.exists(self.state_path):
+            with open(self.state_path) as f:
+                data = json.load(f)
+                self._pending = data.get("pending", [])
+
+    def _save(self) -> None:
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        with open(self.state_path, "w") as f:
+            json.dump({"pending": self._pending}, f)

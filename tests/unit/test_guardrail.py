@@ -134,3 +134,59 @@ def test_sandbox_resolves_symlink_escape():
         action = Action(type="read", params={"path": link_path})
         result = sandbox.check(action)
         assert result.verdict == Verdict.DENY
+
+
+def test_hitl_gate_approve():
+    from harness.guardrail import HITLGate
+    gate = HITLGate()
+    action = Action(type="shell", params={"command": "git push"})
+    result = gate.approve(action)
+    assert result.verdict == Verdict.APPROVED
+
+
+def test_hitl_gate_reject():
+    from harness.guardrail import HITLGate
+    gate = HITLGate()
+    action = Action(type="shell", params={"command": "git push"})
+    result = gate.reject(action)
+    assert result.verdict == Verdict.REJECTED
+
+
+def test_hitl_gate_timeout():
+    from harness.guardrail import HITLGate
+    gate = HITLGate(timeout=0)
+    action = Action(type="shell", params={"command": "git push"})
+    result = gate.await_approval(action)
+    assert result.verdict == Verdict.TIMEOUT
+
+
+def test_hitl_gate_pending_then_approve():
+    from harness.guardrail import HITLGate
+    gate = HITLGate()
+    action = Action(type="shell", params={"command": "git push"})
+    gate.add_pending(action)
+    assert gate.has_pending() is True
+    result = gate.approve(action)
+    assert result.verdict == Verdict.APPROVED
+    assert gate.has_pending() is False
+
+
+def test_hitl_gate_pending_then_reject():
+    from harness.guardrail import HITLGate
+    gate = HITLGate()
+    action = Action(type="shell", params={"command": "git push"})
+    gate.add_pending(action)
+    result = gate.reject(action)
+    assert result.verdict == Verdict.REJECTED
+    assert gate.has_pending() is False
+
+
+def test_hitl_gate_list_pending():
+    from harness.guardrail import HITLGate
+    gate = HITLGate()
+    a1 = Action(type="shell", params={"command": "git push"})
+    a2 = Action(type="shell", params={"command": "npm publish"})
+    gate.add_pending(a1)
+    gate.add_pending(a2)
+    pending = gate.list_pending()
+    assert len(pending) == 2
