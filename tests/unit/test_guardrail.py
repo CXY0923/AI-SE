@@ -1,7 +1,19 @@
 import pytest
 import sys
+import tempfile
+import os
 from harness.action import Action, Verdict
 from harness.guardrail import RuleEngine
+
+
+@pytest.fixture
+def hitl_gate():
+    from harness.guardrail import HITLGate
+    tmpdir = tempfile.mkdtemp()
+    gate = HITLGate(timeout=300, state_path=os.path.join(tmpdir, "hitl_state.json"))
+    yield gate
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_deny_blacklisted_command():
@@ -136,17 +148,15 @@ def test_sandbox_resolves_symlink_escape():
         assert result.verdict == Verdict.DENY
 
 
-def test_hitl_gate_approve():
-    from harness.guardrail import HITLGate
-    gate = HITLGate()
+def test_hitl_gate_approve(hitl_gate):
+    gate = hitl_gate
     action = Action(type="shell", params={"command": "git push"})
     result = gate.approve(action)
     assert result.verdict == Verdict.APPROVED
 
 
-def test_hitl_gate_reject():
-    from harness.guardrail import HITLGate
-    gate = HITLGate()
+def test_hitl_gate_reject(hitl_gate):
+    gate = hitl_gate
     action = Action(type="shell", params={"command": "git push"})
     result = gate.reject(action)
     assert result.verdict == Verdict.REJECTED
@@ -160,9 +170,8 @@ def test_hitl_gate_timeout():
     assert result.verdict == Verdict.TIMEOUT
 
 
-def test_hitl_gate_pending_then_approve():
-    from harness.guardrail import HITLGate
-    gate = HITLGate()
+def test_hitl_gate_pending_then_approve(hitl_gate):
+    gate = hitl_gate
     action = Action(type="shell", params={"command": "git push"})
     gate.add_pending(action)
     assert gate.has_pending() is True
@@ -171,9 +180,8 @@ def test_hitl_gate_pending_then_approve():
     assert gate.has_pending() is False
 
 
-def test_hitl_gate_pending_then_reject():
-    from harness.guardrail import HITLGate
-    gate = HITLGate()
+def test_hitl_gate_pending_then_reject(hitl_gate):
+    gate = hitl_gate
     action = Action(type="shell", params={"command": "git push"})
     gate.add_pending(action)
     result = gate.reject(action)
@@ -181,9 +189,8 @@ def test_hitl_gate_pending_then_reject():
     assert gate.has_pending() is False
 
 
-def test_hitl_gate_list_pending():
-    from harness.guardrail import HITLGate
-    gate = HITLGate()
+def test_hitl_gate_list_pending(hitl_gate):
+    gate = hitl_gate
     a1 = Action(type="shell", params={"command": "git push"})
     a2 = Action(type="shell", params={"command": "npm publish"})
     gate.add_pending(a1)
