@@ -81,7 +81,7 @@ class AgentHarness:
                 elif hitl_result.verdict == Verdict.TIMEOUT:
                     return {
                         "success": False,
-                        "reason": "approval timed out",
+                        "reason": hitl_result.reason,
                         "rounds": round_num,
                     }
 
