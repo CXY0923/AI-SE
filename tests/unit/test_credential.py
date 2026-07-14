@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import patch, MagicMock
 from harness.credential import CredentialManager
 
 SERVICE_NAME = "coding-agent-harness-test"
