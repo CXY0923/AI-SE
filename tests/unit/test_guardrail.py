@@ -257,3 +257,40 @@ def test_guardrail_integration_path_escape():
     action = Action(type="read", params={"path": "/etc/passwd"})
     result = guard.check(action)
     assert result.verdict == Verdict.DENY
+
+
+def test_hitl_gate_wait_for_approval_approved():
+    from harness.guardrail import HITLGate
+    import tempfile
+    import os
+    tmpdir = tempfile.mkdtemp()
+    gate = HITLGate(timeout=300, state_path=os.path.join(tmpdir, "hitl.json"))
+    action = Action(type="shell", params={"command": "git push"})
+
+    result = gate.await_approval(action)
+    assert result.verdict == Verdict.PENDING
+
+    pending = gate.list_pending()
+    assert len(pending) == 1
+    result = gate.approve(action)
+    assert result.verdict == Verdict.APPROVED
+    assert gate.has_pending() is False
+
+    import shutil
+    shutil.rmtree(tmpdir)
+
+
+def test_hitl_gate_wait_for_approval_rejected():
+    from harness.guardrail import HITLGate
+    import tempfile
+    import os
+    tmpdir = tempfile.mkdtemp()
+    gate = HITLGate(timeout=300, state_path=os.path.join(tmpdir, "hitl.json"))
+    action = Action(type="shell", params={"command": "npm publish"})
+
+    gate.await_approval(action)
+    result = gate.reject(action)
+    assert result.verdict == Verdict.REJECTED
+
+    import shutil
+    shutil.rmtree(tmpdir)

@@ -71,6 +71,9 @@ class AgentHarness:
                     "action": action,
                 }
             elif guard_result.verdict == Verdict.PENDING:
+                print(f"⚠️  动作需要人工审批: {action.type}({action.params})")
+                print(f"   原因: {guard_result.reason}")
+                print(f"   运行 `harness approve` 进行审批")
                 hitl_result = self.guardrail.hitl.await_approval(action)
                 if hitl_result.verdict == Verdict.REJECTED:
                     return {

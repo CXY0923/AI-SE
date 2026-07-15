@@ -40,3 +40,22 @@ def test_cli_status_shows_not_configured(monkeypatch, capsys):
         status_command()
         captured = capsys.readouterr()
         assert "未配置" in captured.out
+
+
+def test_cli_approve_no_pending(monkeypatch, capsys):
+    from harness.cli import approve_command
+    from harness.guardrail import HITLGate
+    import tempfile
+    import os
+
+    tmpdir = tempfile.mkdtemp()
+    state_path = os.path.join(tmpdir, "hitl.json")
+    gate = HITLGate(timeout=300, state_path=state_path)
+
+    monkeypatch.setattr("harness.cli.get_hitl_gate", lambda: gate)
+    approve_command()
+    captured = capsys.readouterr()
+    assert "待审批" in captured.out or "pending" in captured.out.lower()
+
+    import shutil
+    shutil.rmtree(tmpdir)
