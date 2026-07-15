@@ -48,3 +48,31 @@ def test_store_key_overwrites(mgr):
     mgr.store_key("openai", "sk-old")
     mgr.store_key("openai", "sk-new")
     assert mgr.get_key("openai") == "sk-new"
+
+
+def test_keyring_store_and_get():
+    """测试 keyring 模式下存储和读取。"""
+    mgr = CredentialManager(service_name="test-harness", use_keyring=True)
+    mgr.store_key("test_key", "test-value-123")
+    assert mgr.get_key("test_key") == "test-value-123"
+    mgr.delete_key("test_key")
+
+
+def test_keyring_delete():
+    """测试 keyring 模式下删除。"""
+    mgr = CredentialManager(service_name="test-harness", use_keyring=True)
+    mgr.store_key("test_del", "to-delete")
+    mgr.delete_key("test_del")
+    assert mgr.get_key("test_del") is None
+
+
+def test_keyring_list_services():
+    """测试 keyring 模式下列出服务。"""
+    mgr = CredentialManager(service_name="test-harness", use_keyring=True)
+    mgr.store_key("svc_a", "val_a")
+    mgr.store_key("svc_b", "val_b")
+    services = mgr.list_services()
+    assert "svc_a" in services
+    assert "svc_b" in services
+    mgr.delete_key("svc_a")
+    mgr.delete_key("svc_b")
