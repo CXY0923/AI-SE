@@ -1,0 +1,40 @@
+stages:
+  - test
+  - build
+
+unit-test:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir -e ".[dev]"
+  script:
+    - pytest tests/unit/ -v --tb=short
+  artifacts:
+    reports:
+      junit: junit.xml
+    when: always
+
+integration-test:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir -e ".[dev]"
+  script:
+    - pytest tests/integration/ -v --tb=short
+  artifacts:
+    when: always
+
+docker-build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t coding-agent-harness .
+    - docker save coding-agent-harness | gzip > coding-agent-harness.tar.gz
+  artifacts:
+    paths:
+      - coding-agent-harness.tar.gz
+    when: always
+  only:
+    - main
