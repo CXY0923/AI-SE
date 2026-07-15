@@ -122,6 +122,17 @@ class HITLGate:
         self.add_pending(action)
         return GuardrailResult(verdict=Verdict.PENDING, reason="等待人工审批", layer="hitl")
 
+    def get_pending_action(self):
+        pending = self.list_pending()
+        if pending:
+            action_data = pending[0]
+            return Action(
+                type=action_data["action_type"],
+                params=action_data["params"],
+                thought=action_data.get("thought", ""),
+            )
+        return None
+
     def _remove_pending(self, action: Action) -> None:
         self._pending = [
             p for p in self._pending

@@ -32,23 +32,29 @@ class Memory:
         return self.knowledge.get(key)
 
     def build_context(self, task: str) -> str:
-        parts = [f"Task: {task}"]
+        """构建发送给 LLM 的完整上下文（含 system prompt）。"""
+        from harness.prompts import build_system_prompt
+        parts = [build_system_prompt(), ""]
+
+        parts.append(f"## 当前任务\n{task}")
+        parts.append("")
 
         if self.knowledge:
-            parts.append("Project Knowledge:")
+            parts.append("## 项目知识")
             for k, v in self.knowledge.items():
-                parts.append(f"  {k}: {v}")
+                parts.append(f"- {k}: {v}")
+            parts.append("")
 
         if self.history:
-            parts.append("Recent History:")
+            parts.append("## 最近操作历史")
             for turn in self.history[-5:]:
                 action_desc = f"  → {turn.action.type}({turn.action.params})"
                 result_desc = f"  Result: {'OK' if turn.result.success else 'FAIL'}"
                 parts.append(action_desc)
                 parts.append(result_desc)
+            parts.append("")
 
-        parts.append("What should you do next? Respond with JSON:")
-        parts.append('{"action": "...", "params": {...}, "thought": "..."}')
+        parts.append("## 请输出下一步操作")
         return "\n".join(parts)
 
     def _trim_history(self) -> None:

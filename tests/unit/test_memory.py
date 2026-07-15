@@ -75,3 +75,12 @@ def test_context_building(memory):
     assert "Python 3.12" in context
     assert "main.py" in context
     assert "修改 main.py 添加新功能" in context
+
+
+def test_build_context_with_system_prompt(memory):
+    """测试 context 包含 system prompt。"""
+    from harness.prompts import build_system_prompt
+    context = memory.build_context("测试任务")
+    assert "read" in context
+    assert "write" in context
+    assert "测试任务" in context

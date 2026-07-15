@@ -5,6 +5,7 @@ import os
 
 from harness.credential import CredentialManager
 from harness.config import load_config
+from harness.action import Action
 
 
 def setup_command():
@@ -109,6 +110,57 @@ def run_command(args):
         print(f"❌ 任务失败: {result['reason']} ({result['rounds']} 轮)")
 
 
+def get_hitl_gate():
+    from harness.guardrail import HITLGate
+    return HITLGate(timeout=300)
+
+
+def approve_command():
+    gate = get_hitl_gate()
+    pending = gate.list_pending()
+
+    if not pending:
+        print("✅ 没有待审批的请求。")
+        return
+
+    print(f"📋 待审批请求 ({len(pending)} 个):")
+    print("=" * 60)
+    for i, p in enumerate(pending, 1):
+        print(f"{i}. [{p['id']}] {p['action_type']}")
+        print(f"   参数: {p['params']}")
+        if p.get('thought'):
+            print(f"   思考: {p['thought']}")
+        print()
+
+    try:
+        choice = input("选择要审批的编号 (输入编号，或按 Enter 跳过): ").strip()
+        if not choice:
+            print("已跳过。")
+            return
+
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(pending):
+            print("无效编号。")
+            return
+
+        selected = pending[idx]
+        action = Action(
+            type=selected["action_type"],
+            params=selected["params"],
+            thought=selected.get("thought", ""),
+        )
+
+        cmd = input("审批 (a)pprove / (r)eject / (s)kip? [a]: ").strip().lower()
+        if cmd == "r" or cmd == "reject":
+            result = gate.reject(action)
+            print(f"❌ 已拒绝: {result.reason}")
+        else:
+            result = gate.approve(action)
+            print(f"✅ 已批准: {result.reason}")
+    except (ValueError, IndexError):
+        print("输入无效。")
+
+
 def config_command():
     config_path = os.path.expanduser("~/.harness/config.yaml")
     if os.path.exists(config_path):
@@ -127,6 +179,8 @@ def main():
     subparsers.add_parser("status", help="查看配置状态")
     subparsers.add_parser("config", help="查看配置")
 
+    subparsers.add_parser("approve", help="查看和审批待处理的请求")
+
     run_parser = subparsers.add_parser("run", help="运行编码任务")
     run_parser.add_argument("task", nargs=argparse.REMAINDER, help="任务描述")
 
@@ -138,6 +192,8 @@ def main():
         status_command()
     elif args.command == "run":
         run_command(args)
+    elif args.command == "approve":
+        approve_command()
     elif args.command == "config":
         config_command()
     else:
