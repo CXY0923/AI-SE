@@ -137,6 +137,36 @@ class Action:
 | worktree 间依赖管理 | 某些 worktree 合并后，后续 worktree 自动包含最新代码，但若合并前就创建了 worktree 则可能落后 | 应在每个 worktree 创建后 `git pull` 同步 |
 | 大型 worktree 数量 | 6 个 worktree 管理成本较高 | 可考虑将紧密耦合的 Task 合并到更少的 worktree |
 
+### 4.3 交付前完整性验证发现的新问题
+
+> 完成全部 16 个 Task 后做端到端验证（2026-07-17），实际跑了 CLI、单元测试、Docker 构建与容器内运行，发现 3 个此前测试与 Plan 都未暴露的真实问题。这印证了"测试通过 ≠ 用户能用"——单元测试在 pytest 内部跑，stdout/stderr 编码被改写、keyring 在 mock 里走假后端，都与真实终端环境行为不同。
+
+| 问题 | 触发条件 | 根因 | 解决方案 |
+|------|---------|------|---------|
+| **CLI 在 Windows GBK 控制台崩溃** | `harness status` / `approve` / `run` 在 PowerShell/CMD 默认环境直接跑 | `cli.py` 用了 emoji（✅❌ℹ️🚀📋），Windows 控制台默认 cp936 编码无法编码这些字符 → `UnicodeEncodeError: 'gbk' codec can't encode character` | `cli.py` 顶部加 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` |
+| **容器内 OS Keyring 完全不可用** | 在 docker 容器里跑 `harness run` 或 `harness setup` | Dockerfile 基于 `python:3.12-slim`，无 D-Bus / gnome-keyring，`keyring` 库落到 `keyring.backends.fail.Keyring`，所有 set/get 抛 `NoKeyringError` | (1) `_get_api_key`：环境变量 `OPENAI_API_KEY` 优先，keyring 兜底；(2) `CredentialManager.get_key/has_key` 捕获 `NoKeyringError` 优雅返回 None/False；(3) `store_key` 抛带提示的 RuntimeError |
+| **Docker Desktop 代理 / 镜像源配置** | 本机拉 `python:3.12-slim` 失败 | `daemon.json` 配的镜像加速器 `docker.xuanyuan.me` 需要走 `127.0.0.1:1080` 代理，但本机代理实际端口是 17897 | (1) Settings→Proxies 设 `http://127.0.0.1:17897`；(2) Settings→Docker Engine 清空 `registry-mirrors`，直连 Docker Hub |
+
+### 4.4 修复过程要点
+
+**问题 1（GBK 编码崩溃）**：
+
+- pytest 内部改写了 stdout 编码，3 个 CLI 单元测试全过，但真实 cmd/PowerShell 跑就崩
+- 修复仅 4 行（`cli.py:5-9`）：reconfigure 流编码到 utf-8，`errors="replace"` 兜底
+- 加 4 个新单元测试覆盖环境变量路径（`test_get_api_key_prefers_env_over_keyring` 等），全套 107 passed
+
+**问题 2（容器内 keyring 不可用）**：
+
+- 实测验证：`docker run --entrypoint python ... -c "import keyring; print(keyring.get_keyring())"` 输出 `fail.Keyring`
+- 一开始只改 `_get_api_key` 加环境变量优先，但容器里仍崩——因为 `or cred.get_key(...)` 短路求值时第二段仍执行，fail backend 直接抛栈
+- 进一步在 `CredentialManager.get_key/has_key/delete_key` 里捕获 `NoKeyringError`；`store_key` 重抛带提示的 `RuntimeError`（让 `harness setup` 在容器里给出明确报错而不是裸栈）
+- 端到端验证：`docker run -e OPENAI_API_KEY=sk-fake coding-agent-harness:test status` 输出 `✅ Harness 已就绪`；不设环境变量时 `harness run` 干净 exit 1
+
+**问题 3（Docker 代理）**：
+
+- 这是环境配置问题，不动代码；记录在 README 的 Docker 章节供交付方参考
+
+
 ---
 
 ## 五、对 Brainstorming 技能的反思
@@ -173,7 +203,7 @@ class Action:
 | 13 | Agent 主循环 | ✅ 完成 | 5 | 修正 JSON 键名 |
 | 14 | CLI 入口 | ✅ 完成 | 3 | 审查通过 |
 | 15 | 集成测试 | ✅ 完成 | 11 | 3 个机制演示通过 |
-| 16 | Docker + CI | ⏳ 待完成 | - | - |
+| 16 | Docker + CI | ✅ 完成 | - | - |
 
 **总计**：91 passed, 1 skipped (Windows symlink), 0 failed
 

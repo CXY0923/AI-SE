@@ -102,12 +102,14 @@ pip install -e ".[dev]"
 ### 通过 Docker 运行
 
 ```bash
-# 构建镜像
+# 构建镜像（约 426 MB）
 docker build -t coding-agent-harness .
 
-# 运行
-docker run --rm -v harness-data:/root/.harness coding-agent-harness --help
+# 运行（API Key 通过环境变量传入，详见下方"容器内的 API Key"说明）
+docker run --rm -e OPENAI_API_KEY=sk-xxx coding-agent-harness status
 ```
+
+> **国内拉镜像失败**：Settings → Resources → Proxies 勾 Manual，填 `http://127.0.0.1:<代理端口>`；同时 Settings → Docker Engine 清空 `registry-mirrors` 直连 Docker Hub。
 
 ---
 
@@ -115,17 +117,17 @@ docker run --rm -v harness-data:/root/.harness coding-agent-harness --help
 
 ### 1. 配置 API Key
 
-首次使用需要安全录入 OpenAI API Key：
+两种方式（**容器里只能用第 2 种**，详见下方"容器内的 API Key"）：
 
 ```bash
-# 从源码安装后
+# 方式 A（宿主机直接安装）：交互式录入到 OS Keyring
 harness setup
+# Key 通过 Windows Credential Manager / macOS Keychain / Linux Secret Service 加密存储
 
-# 通过 Docker
-docker run -it -v harness-data:/root/.harness coding-agent-harness setup
+# 方式 B（宿主机或容器）：环境变量
+export OPENAI_API_KEY=sk-xxx       # Linux/macOS
+$env:OPENAI_API_KEY = "sk-xxx"     # Windows PowerShell
 ```
-
-Key 通过操作系统钥匙串安全存储（Windows Credential Manager / macOS Keychain / Linux Secret Service），不会明文写入任何文件。
 
 ### 2. 查看状态
 
@@ -196,17 +198,31 @@ harness:
 # 构建
 docker build -t coding-agent-harness .
 
-# 运行任务（挂载当前目录为工作区）
+# 运行任务（API Key 用环境变量传入，持久化目录挂载到宿主机）
 docker run -it --rm \
-  -v harness-data:/root/.harness \
-  -v $(pwd):/workspace -w /workspace \
+  -e OPENAI_API_KEY=sk-xxx \
+  -v "$HOME/.harness:/root/.harness" \
+  -v "$(pwd):/workspace" -w /workspace \
   coding-agent-harness run "修复失败的测试"
-
-# 首次配置 Key
-docker run -it --rm \
-  -v harness-data:/root/.harness \
-  coding-agent-harness setup
 ```
+
+### 容器内的 API Key（重要）
+
+**容器里不能使用 OS Keyring**。Linux 容器没有 D-Bus / gnome-keyring，`keyring` 库会落到 `fail.Keyring` 后端，任何 set/get 都抛 `NoKeyringError`——所以 `harness setup` 在容器里不可用。
+
+本项目针对容器场景做了**环境变量优先 + Keyring 兜底**的设计：
+
+```python
+# src/harness/cli.py:_get_api_key
+def _get_api_key(cred):
+    return os.environ.get("OPENAI_API_KEY") or cred.get_key("openai")
+```
+
+- **宿主机**：环境变量没设 → 走 OS Keyring（行为不变）
+- **容器里**：`docker run -e OPENAI_API_KEY=xxx ...` → 直接用环境变量
+- **未配置时**：`CredentialManager.get_key` 捕获 `NoKeyringError` 返回 None，CLI 干净退出（不抛栈）
+
+为避免 Key 出现在 shell history / docker inspect，生产场景推荐 `--env-file ./secrets.env`（加入 `.gitignore`）。
 
 ### CI/CD
 
