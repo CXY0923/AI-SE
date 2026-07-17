@@ -3,6 +3,12 @@ import getpass
 import sys
 import os
 
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 from harness.credential import CredentialManager
 from harness.config import load_config
 from harness.action import Action
@@ -29,19 +35,29 @@ def setup_command():
     print("✅ API Key 已安全存储到系统钥匙串。")
 
 
+def _get_api_key(cred):
+    """环境变量优先，Keyring 兜底。容器内 keyring amount 不可用时仍能工作。"""
+    return os.environ.get("OPENAI_API_KEY") or cred.get_key("openai")
+
+
 def status_command():
     cred = CredentialManager()
     loaded = False
     services = cred.list_services()
+    env_key = os.environ.get("OPENAI_API_KEY")
 
     print("Coding Agent Harness - 状态")
     print("=" * 40)
 
-    if services:
-        print(f"✅ 已配置的服务: {', '.join(services)}")
+    if env_key:
+        print(f"✅ OPENAI_API_KEY 环境变量已设置 (长度 {len(env_key)})")
         loaded = True
-    else:
-        print("❌ 未配置 API Key。运行 `harness setup` 配置。")
+
+    if services:
+        print(f"✅ Keyring 已配置的服务: {', '.join(services)}")
+        loaded = True
+    elif not env_key:
+        print("❌ 未配置 API Key。运行 `harness setup` 或设置 OPENAI_API_KEY 环境变量。")
 
     config_path = os.path.expanduser("~/.harness/config.yaml")
     if os.path.exists(config_path):
@@ -53,7 +69,7 @@ def status_command():
     if loaded:
         print("✅ Harness 已就绪。")
     else:
-        print("❌ 请先运行 `harness setup` 配置 API Key。")
+        print("❌ 请先运行 `harness setup` 或设置 OPENAI_API_KEY 环境变量。")
 
 
 def run_command(args):
@@ -66,9 +82,9 @@ def run_command(args):
 
     config = load_config()
     cred = CredentialManager()
-    api_key = cred.get_key("openai")
+    api_key = _get_api_key(cred)
     if not api_key:
-        print("❌ API Key 未配置。请先运行 `harness setup`。")
+        print("❌ API Key 未配置。请运行 `harness setup` 或设置 OPENAI_API_KEY 环境变量。")
         sys.exit(1)
 
     llm = OpenAILLM(

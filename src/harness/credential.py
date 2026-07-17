@@ -1,6 +1,7 @@
 import json
 import os
 import keyring
+from keyring.errors import NoKeyringError
 from typing import Optional
 
 
@@ -17,7 +18,13 @@ class CredentialManager:
 
     def store_key(self, service: str, key: str) -> None:
         if self._use_keyring:
-            keyring.set_password(self.service_name, service, key)
+            try:
+                keyring.set_password(self.service_name, service, key)
+            except NoKeyringError:
+                raise RuntimeError(
+                    "OS Keyring 不可用（通常是容器内无 D-Bus/Secret Service 后端）。"
+                    "请改用 OPENAI_API_KEY 环境变量。"
+                )
             self._store[service] = key
         else:
             self._store[service] = key
@@ -25,12 +32,18 @@ class CredentialManager:
 
     def get_key(self, service: str) -> Optional[str]:
         if self._use_keyring:
-            return keyring.get_password(self.service_name, service)
+            try:
+                return keyring.get_password(self.service_name, service)
+            except NoKeyringError:
+                return None
         return self._store.get(service)
 
     def delete_key(self, service: str) -> None:
         if self._use_keyring:
-            keyring.delete_password(self.service_name, service)
+            try:
+                keyring.delete_password(self.service_name, service)
+            except NoKeyringError:
+                pass
             self._store.pop(service, None)
         else:
             self._store.pop(service, None)
@@ -38,7 +51,10 @@ class CredentialManager:
 
     def has_key(self, service: str) -> bool:
         if self._use_keyring:
-            return keyring.get_password(self.service_name, service) is not None
+            try:
+                return keyring.get_password(self.service_name, service) is not None
+            except NoKeyringError:
+                return False
         return service in self._store
 
     def list_services(self) -> list[str]:
